@@ -5,10 +5,6 @@
 @using static BlazorD.Client.Models.Cell
 @inject IJSRuntime JSRuntime;
 
-<script>
-    
-</script>
-
 <PageTitle>Dungeon</PageTitle>
 
 <h1>Dungeon</h1>
@@ -40,8 +36,10 @@
                     @for (int j = 0; j < mapHandler.actualMap[i].Count; j++) {
                         string tdStyle = "border: solid 1px black; width:23px; height:23px; background-color: ";
 
-                        if (mapHandler.IsRevealed(j, i)) tdStyle += mapHandler.actualMap[i][j].ToColor();
-                        else tdStyle += "black";
+                        if (mapHandler.IsRevealed(j, i)) {
+                            tdStyle += mapHandler.actualMap[i][j].ToColor();
+                            if (mapHandler.actualMap[i][j].Smoked) tdStyle += "; filter: brightness(85%);";
+                        } else tdStyle += "black";
 
                         tdStyle += ";";
                         <td style="@tdStyle"></td>
@@ -87,7 +85,6 @@
 }
 
 @code {
-    string sMoves = "";
     bool bGenerating = true;
 
     ViewEvent viewEvent = new ViewEvent();
@@ -135,6 +132,8 @@
     #endregion
 
     bool bTurnoGiocatore = false;
+    bool bSmokeAttiva = false;
+
     private static Func<string, Task>? KeyboardEventLocalAsyncReference;
 
     public async Task KeyboardEventLocalAsync(string key) {
@@ -145,7 +144,7 @@
     [JSInvokable]
     public static async Task KeyboardEventAsync(KeyboardEventArgs e) {
         if (KeyboardEventLocalAsyncReference is { } actionAsync) {
-            await actionAsync(e.Key); 
+            await actionAsync(e.Key);
         }
     }
 
@@ -156,8 +155,8 @@
             ResetAll();
 
             attr = 100;
+            for (int i = 0; i < 10; i++) { Global.availableItems.Add(new Item(Item.ItemType.Smoke)); }
             for (int i = 0; i < 100; i++) { Global.availableItems.Add(new Item(Item.ItemType.HealPotion)); }
-            //activeEffects.Add(new Effect(Effect.EffectType.Speed, 3, 3));
 
             Generate();
         }
@@ -208,10 +207,10 @@
                 } else if (it.Type == Item.ItemType.HealPotion) {
                     Effect eff = new Effect(Effect.EffectType.Heal, it.Strength, it.Duration);
                     activeEffects.Add(eff);
+                } else if (it.Type == Item.ItemType.Smoke) {
+                    mapHandler.UseSmoke(it);
+                    bSmokeAttiva = true;
                 }
-                //else if (it.Type == Item.ItemType.Smoke) {
-                //
-                //}
             }
             StateHasChanged();
         }
@@ -255,7 +254,11 @@
             activeEffects[i].RemainingDuration--;
         }
         activeEffects.RemoveAll(x => x.RemainingDuration == 0);
+
+        if (bSmokeAttiva) bSmokeAttiva = mapHandler.HandleSmokeDuration(1);
         StateHasChanged();
+
+        if (mapHandler.actualMap[p.Y][p.X].Smoked) bStealth = true;
 
         if (!bStealth) {
             List<Cell> surpr = new List<Cell>();

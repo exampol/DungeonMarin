@@ -129,30 +129,56 @@ namespace BlazorD.Client.Models {
         }
         private void AbsoluteMove(Point oP, Point nP) { actualMap[oP.Y][oP.X].Type = CellType.Empty; actualMap[nP.Y][nP.X].Type = CellType.Player; }
 
-        //public void Smoke(Item item) {
-        //    if (item.Type != Item.ItemType.Smoke) return;
-        //    Point p = GetP();
 
-        //    List<Point> circle = new List<Point>();
+        private List<Tuple<int, int>> SmokedCells = new List<Tuple<int, int>>();
 
-        //    for (int j = 1; j < 5; j++) // 5 è il raggio
-        //    {
-        //        for (int i = 0; i < 360; i++) {
-        //            double radians = ToRadians(i);
-        //            Point cP = new Point((int)Math.Round(p.X + (j * Math.Cos(radians))), (int)Math.Round(p.Y + (j * Math.Sin(radians))));
-        //            if (!circle.Contains(cP)) circle.Add(cP);
-        //        }
-        //    }
+        /// <summary>
+        /// La funzione fa passare il tempo per lo smoke, interno a LoadedM perché viene gestito più velocemente che accedendo a tutte le celle
+        /// </summary>
+        /// <param name="iTurns">Il numero di turni da far passare</param>
+        /// <returns>Se ci sono ancora celle con lo smoke attivo</returns>
+        public bool HandleSmokeDuration(int iTurns) {
+            bool stillSmoke = false;
+            for (int i = SmokedCells.Count - 1; i >= 0; i--) {
+                actualMap[SmokedCells[i].Item1][SmokedCells[i].Item2].SmokeDuration -= iTurns;
+                if (actualMap[SmokedCells[i].Item1][SmokedCells[i].Item2].SmokeDuration <= 0) {
+                    actualMap[SmokedCells[i].Item1][SmokedCells[i].Item2].Smoked = false;
+                    actualMap[SmokedCells[i].Item1][SmokedCells[i].Item2].SmokeDuration = 0;
 
-        //    for (int i = 0; i < circle.Count; i++) {
-        //        if (IsSightClear(circle[i], p, out _)) {
-        //            if (!IsOutBounds(circle[i].X, circle[i].Y)) {
-        //                m[circle[i].Y][circle[i].X].Smoked = true;
-        //                m[circle[i].Y][circle[i].X].SmokeDuration = item.Duration;
-        //            }
-        //        }
-        //    }
-        //}
+                    SmokedCells.RemoveAt(i);
+                } else stillSmoke = true;
+            }
+            return stillSmoke;
+        }
+
+        public void UseSmoke(Item item) {
+            if (item.Type != Item.ItemType.Smoke) return;
+            Point p = GetP();
+
+            List<Point> circle = new List<Point>();
+
+            for (int j = 1; j < 5; j++) // 5 è il raggio
+            {
+                for (int i = 0; i < 360; i++) {
+                    double radians = ToRadians(i);
+                    Point cP = new Point((int)Math.Round(p.X + (j * Math.Cos(radians))), (int)Math.Round(p.Y + (j * Math.Sin(radians))));
+                    if (!circle.Contains(cP)) circle.Add(cP);
+                }
+            }
+
+            for (int i = 0; i < circle.Count; i++) {
+                if (IsSightClear(circle[i], p, out _, false)) {
+                    if (!IsOutBounds(circle[i].X, circle[i].Y)) {
+                        actualMap[circle[i].Y][circle[i].X].Smoked = true;
+                        actualMap[circle[i].Y][circle[i].X].SmokeDuration = item.Duration;
+                        SmokedCells.Add(new Tuple<int, int>(circle[i].Y, circle[i].X));
+                    }
+                }
+            }
+            actualMap[p.Y][p.X].Smoked = true;
+            actualMap[p.Y][p.X].SmokeDuration = item.Duration;
+            SmokedCells.Add(new Tuple<int, int>(p.Y, p.X));
+        }
 
         public void RevealAroundPlayer(int iRange) {
             Point p = GetP();
@@ -236,16 +262,16 @@ namespace BlazorD.Client.Models {
         private static List<string> CellTypeColors = new List<string>() { "white", "grey", "red", "yellow", "yellow", "blue", "blue", "green", "black" };
 
         public CellType Type;
-        //public bool Smoked = false;
-        //public int SmokeDuration = 0;
+        public bool Smoked = false;
+        public int SmokeDuration = 0;
 
         public int CurrentHealth = 0;
         public int Level = 0;
 
-        //public Cell(CellType type, bool smoked, int smokeDuration, int level) {
-        //    this.Type = type; this.Smoked = smoked; this.SmokeDuration = smokeDuration; this.Level = level;
-        //    if (type == CellType.Monster) CurrentHealth = level * 10;
-        //}
+        public Cell(CellType type, bool smoked, int smokeDuration, int level) {
+            this.Type = type; this.Smoked = smoked; this.SmokeDuration = smokeDuration; this.Level = level;
+            if (type == CellType.Monster) CurrentHealth = level * 10;
+        }
 
         public Cell(CellType type, int level) {
             this.Type = type; this.Level = level;

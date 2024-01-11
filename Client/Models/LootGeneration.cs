@@ -87,7 +87,7 @@
                 roll = Global.rnd.Next(4, 10);
                 duration = roll;
                 strength = 100 / roll;
-            } else if (Type == Item.ItemType.Smoke) duration = 4;
+            } else if (Type == Item.ItemType.Smoke) duration = 10;
         }
 
         public static Item GetItem() {
