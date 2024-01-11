@@ -1,0 +1,68 @@
+﻿<div class="modal @ModalClass" tabindex="-1" role="dialog" style="display:@ModalDisplay">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@title</h5>
+            </div>
+            <div class="modal-body">
+                @foreach (string msg in value) {
+                    <p>@msg</p>
+                }
+                <br />
+                @for (int i = 0; i < options.Length; i++) {
+                    int iButtonIndex = i;
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal" @onclick="() => Close(iButtonIndex)">@options[i]</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@if (ShowBackdrop) {
+    <div class="modal-backdrop fade show"></div>
+}
+
+
+@code {
+    public Guid Guid = Guid.NewGuid();
+    public string ModalDisplay = "none;";
+    public string ModalClass = "";
+    public bool ShowBackdrop = false;
+
+    private List<string> value = new List<string>();
+    private string title = "";
+    private string[] options = new string[0];
+
+    private int iChosenOption = 0;
+    private CancellationTokenSource CloseToken;
+
+    public async Task<int> Open(string message, string title, string[] options) {
+        List<string> tmp = message.Split(new string[] { "\r\n" }, StringSplitOptions.None).ToList();
+        return await Open(tmp, title, options);
+    }
+
+    public async Task<int> Open(List<string> messages, string title, string[] options) {
+        ModalDisplay = "block;";
+        ModalClass = "Show";
+        ShowBackdrop = true;
+        this.title = title;
+        this.value = messages;
+        this.options = options;
+        StateHasChanged();
+
+        try {
+            using (CloseToken = new()) {
+                await Task.Delay(-1, CloseToken.Token);
+            }
+        } catch (TaskCanceledException) { } // we want to cancel it.
+
+        ModalDisplay = "none";
+        ModalClass = "";
+        ShowBackdrop = false;
+        StateHasChanged();
+        return iChosenOption;
+    }
+
+    public void Close(int iOption) { iChosenOption = iOption; CloseToken.Cancel(); }
+}

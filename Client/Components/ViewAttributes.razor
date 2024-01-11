@@ -1,0 +1,175 @@
+﻿@using BlazorD.Client.Models
+<div class="modal @ModalClass" tabindex="-1" role="dialog" style="display:@ModalDisplay">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content" style="min-width:600px;">
+            <div class="modal-header">
+                <h5 class="modal-title">Equipaggiamento</h5>
+            </div>
+            <div class="modal-body">
+                <table style="width:100%">
+                    <tr>
+                        <td>Vita: @vit</td>
+                        <td>
+                            @if (vit - origVit > 0) {
+                                <button @onclick="()=>DecreaseStat(0)">-</button>
+                            }
+                            @if (iFreePoints > 0) {
+                                <button @onclick="()=>AddStat(0)">+</button>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Agilità: @agi</td>
+                        <td>
+                            @if (agi - origAgi > 0) {
+                                <button @onclick="()=>DecreaseStat(1)">-</button>
+                            }
+                            @if (iFreePoints > 0) {
+                                <button @onclick="()=>AddStat(1)">+</button>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Difesa: @def</td>
+                        <td>
+                            @if (def - origDef > 0) {
+                                <button @onclick="()=>DecreaseStat(2)">-</button>
+                            }
+                            @if (iFreePoints > 0) {
+                                <button @onclick="()=>AddStat(2)">+</button>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Precisione: @acc</td>
+                        <td>
+                            @if (acc - origAcc > 0) {
+                                <button @onclick="()=>DecreaseStat(3)">-</button>
+                            }
+                            @if (iFreePoints > 0) {
+                                <button @onclick="()=>AddStat(3)">+</button>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Forza: @str</td>
+                        <td>
+                            @if (str - origStr > 0) {
+                                <button @onclick="()=>DecreaseStat(4)">-</button>
+                            }
+                            @if (iFreePoints > 0) {
+                                <button @onclick="()=>AddStat(4)">+</button>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Percezione: @wis</td>
+                        <td>
+                            @if (wis - origWis > 0) {
+                                <button @onclick="()=>DecreaseStat(5)">-</button>
+                            }
+                            @if (iFreePoints > 0) {
+                                <button @onclick="()=>AddStat(5)">+</button>
+                            }
+                        </td>
+                    </tr>
+                </table>
+                <br />
+                <span>Punti liberi: @iFreePoints</span>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal" @onclick="() => OK()">OK</button>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal" @onclick="() => Close()">Annulla</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@if (ShowBackdrop) {
+    <div class="modal-backdrop fade show"></div>
+}
+
+
+@code {
+    public Guid Guid = Guid.NewGuid();
+    public string ModalDisplay = "none;";
+    public string ModalClass = "";
+    public bool ShowBackdrop = false;
+
+    private bool bCancelled = false;
+    private CancellationTokenSource CloseToken;
+
+    public int iFreePoints = 0;
+
+    public int vit = 0; int origVit = 0;
+    public int agi = 0; int origAgi = 0;
+    public int def = 0; int origDef = 0;
+    public int acc = 0; int origAcc = 0;
+    public int str = 0; int origStr = 0;
+    public int wis = 0; int origWis = 0;
+
+    public async Task<bool> Open(int iFreePoints, int vit, int agi, int def, int acc, int str, int wis) {
+        this.iFreePoints = iFreePoints;
+        this.origVit = this.vit = vit;
+        this.origAgi = this.agi = agi;
+        this.origDef = this.def = def;
+        this.origAcc = this.acc = acc;
+        this.origStr = this.str = str;
+        this.origWis = this.wis = wis;
+
+        ModalDisplay = "block;";
+        ModalClass = "Show";
+        ShowBackdrop = true;
+        StateHasChanged();
+
+        try {
+            using (CloseToken = new()) {
+                await Task.Delay(-1, CloseToken.Token);
+            }
+        } catch (TaskCanceledException) { } // we want to cancel it.
+
+        ModalDisplay = "none";
+        ModalClass = "";
+        ShowBackdrop = false;
+        StateHasChanged();
+        return !bCancelled;
+    }
+
+    public void Close() { bCancelled = true; CloseToken.Cancel(); }
+
+    public void OK() {
+        bCancelled = false;
+        CloseToken.Cancel();
+    }
+
+    public void AddStat(int iIndex) {
+        if (iFreePoints <= 0) return;
+        if (iIndex == 0) vit++;
+        else if (iIndex == 1) agi++;
+        else if (iIndex == 2) def++;
+        else if (iIndex == 3) acc++;
+        else if (iIndex == 4) str++;
+        else if (iIndex == 5) wis++;
+
+        iFreePoints--;
+        StateHasChanged();
+    }
+    public void DecreaseStat(int iIndex) {
+        if (iIndex == 0) {
+            if (vit - origVit > 0) { vit--; iFreePoints++; }
+        } else if (iIndex == 1) {
+            if (agi - origAgi > 0) { agi--; iFreePoints++; }
+        } else if (iIndex == 2) {
+            if (def - origDef > 0) { def--; iFreePoints++; }
+        } else if (iIndex == 3) {
+            if (acc - origAcc > 0) { acc--; iFreePoints++; }
+        } else if (iIndex == 4) {
+            if (str - origStr > 0) { str--; iFreePoints++; }
+        } else if (iIndex == 5) {
+            if (wis - origWis > 0) { wis--; iFreePoints++; }
+        }
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,122 @@
+﻿@using BlazorD.Client.Models
+<div class="modal @ModalClass" tabindex="-1" role="dialog" style="display:@ModalDisplay">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content" style="min-width:600px;">
+            <div class="modal-header">
+                <h5 class="modal-title">Equipaggiamento</h5>
+            </div>
+            <div class="modal-body">
+                <table style="width:100%">
+                    <tr>
+                        <td style="width:50%">
+                            <span><b>Corazza: </b>@Corazza?.Name</span><br />
+                            <span><b>Pantaloni: </b>@Leggings?.Name</span><br />
+                            <span><b>Elmetto: </b>@Helmet?.Name</span><br />
+                            <span><b>Scarpe: </b>@Shoes?.Name</span><br />
+                            <span><b>Guanti: </b>@Gloves?.Name</span><br />
+                            <span><b>Anello: </b>@Ring?.Name</span><br />
+                            <span><b>Collana: </b>@Necklace?.Name</span><br />
+                            <span><b>Mantello: </b>@Mantle?.Name</span><br />
+                            <br />
+                            <span><b>AGI:</b> +@bonusAgi</span>
+                            <br />
+                            <span><b>DEF:</b> +@bonusDef</span>
+                            <br />
+                            <span><b>ACC:</b> +@bonusAcc</span>
+                            <br />
+                            <span><b>STR:</b> +@bonusStr</span>
+                            <br />
+                            <span><b>WIS:</b> +@bonusWis</span>
+                            <br />
+                            <span><b>VIT:</b> +@bonusVit</span>
+                        </td>
+                        <td style="width:50%">
+                            @if (Global.availableEquipment.Count == 0) {
+                                <div style="text-align:center; vertical-align:middle; width: 100%">Nulla da visualizzare</div>
+                            } else {
+                                <div style="width:100%; height:100%; max-height:360px; overflow-y:scroll">
+                                    @for (int i = 0; i < Global.availableEquipment.Count; i++) {
+                                        int SavedCounter = i;
+                                        <button @onclick="() => Equip(SavedCounter)">@Global.availableEquipment[i].Name</button>
+                                    }
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                </table>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal" @onclick="() => Close()">Chiudi</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@if (ShowBackdrop) {
+    <div class="modal-backdrop fade show"></div>
+}
+
+
+@code {
+    public Guid Guid = Guid.NewGuid();
+    public string ModalDisplay = "none;";
+    public string ModalClass = "";
+    public bool ShowBackdrop = false;
+
+    #region Equipaggiamento
+    Equipment Corazza { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.ChestPlate); } }
+    Equipment Leggings { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.Leggings); } }
+    Equipment Helmet { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.Helmet); } }
+    Equipment Shoes { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.Shoes); } }
+    Equipment Gloves { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.Gloves); } }
+    Equipment Ring { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.Ring); } }
+    Equipment Necklace { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.Necklace); } }
+    Equipment Mantle { get { return Global.equippedEquipment.FirstOrDefault(x => x.Type == Equipment.EquipmentType.Mantle); } }
+
+    public int bonusAgi { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipAgi > 0).Sum(x => x.EquipAgi); return tot; } }
+    public int bonusDef { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipDef > 0).Sum(x => x.EquipDef); return tot; } }
+    public int bonusAcc { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipAcc > 0).Sum(x => x.EquipAcc); return tot; } }
+    public int bonusStr { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipStr > 0).Sum(x => x.EquipStr); return tot; } }
+    public int bonusWis { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipWis > 0).Sum(x => x.EquipWis); return tot; } }
+    public int bonusVit { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipVit > 0).Sum(x => x.EquipVit); return tot; } }
+    #endregion
+
+    private CancellationTokenSource CloseToken;
+
+    public async Task Open() {
+        ModalDisplay = "block;";
+        ModalClass = "Show";
+        ShowBackdrop = true;
+        StateHasChanged();
+
+        try {
+            using (CloseToken = new()) {
+                await Task.Delay(-1, CloseToken.Token);
+            }
+        } catch (TaskCanceledException) { } // we want to cancel it.
+
+        ModalDisplay = "none";
+        ModalClass = "";
+        ShowBackdrop = false;
+        StateHasChanged();
+    }
+
+    public void Close() { CloseToken.Cancel(); }
+
+    public void Equip(int iIndex) {
+        Equipment toEquip = Global.availableEquipment[iIndex];
+
+        // Disequipaggio il corrente e lo metto dopo quello che equipaggerò
+        Equipment? toRemove = Global.equippedEquipment.FirstOrDefault(x => x.Type == toEquip.Type);
+        if (toRemove != null) Global.availableEquipment.Insert(iIndex + 1, toRemove);
+        Global.equippedEquipment.RemoveAll(x => x.Type == toEquip.Type);
+
+        // Equipaggio il nuovo
+        Global.equippedEquipment.Add(toEquip);
+        Global.availableEquipment.RemoveAt(iIndex);
+
+        StateHasChanged();
+    }
+}

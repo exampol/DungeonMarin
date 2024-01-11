@@ -1,0 +1,604 @@
+﻿@page "/Dungeon"
+@using BlazorD.Client.Components
+@using BlazorD.Client.Models;
+@using System.Drawing
+@using static BlazorD.Client.Models.Cell
+@inject IJSRuntime JSRuntime;
+
+<script>
+    
+</script>
+
+<PageTitle>Dungeon</PageTitle>
+
+<h1>Dungeon</h1>
+<br />
+
+<ViewEvent @ref="viewEvent"></ViewEvent>
+<ViewEquipment @ref="viewEquip"></ViewEquipment>
+<ViewItems @ref="viewItems"></ViewItems>
+<ViewAttributes @ref="viewAttributes"></ViewAttributes>
+
+@if (bGenerating) {
+    <span>In generazione...</span>
+} else if (mapHandler != null) {
+    @if (bTurnoGiocatore) {
+        <button @onclick="()=>Move('A')">Sinistra</button>
+        <button @onclick="()=>Move('W')">Sù</button>
+        <button @onclick="()=>Move('D')">Destra</button>
+        <button @onclick="()=>Move('S')">Giù</button>
+        <button @onclick="()=>Move(' ')">Salta turno</button>
+        <button @onclick="ShowEquipment">Mostra equipaggiamento</button>
+        <button @onclick="ShowItems">Usa oggetti</button>
+        <button @onclick="ShowAttributes">Assegna punti</button>
+    }
+    <br />
+    <table border="1">
+        @{
+            for (int i = 0; i < mapHandler.actualMap.Count; i++) {
+                <tr>
+                    @for (int j = 0; j < mapHandler.actualMap[i].Count; j++) {
+                        string tdStyle = "border: solid 1px black; width:23px; height:23px; background-color: ";
+
+                        if (mapHandler.IsRevealed(j, i)) tdStyle += mapHandler.actualMap[i][j].ToColor();
+                        else tdStyle += "black";
+
+                        tdStyle += ";";
+                        <td style="@tdStyle"></td>
+                    }
+                </tr>
+            }
+        }
+    </table>
+
+    <table>
+        <tr>
+            <td><b>Statistiche:</b></td>
+            <td><b>Effetti:</b></td>
+        </tr>
+        <tr>
+            <td style="vertical-align:top; padding: 15px;">
+                <span><b>Vita:</b> @ht / @MaxHT</span>
+                <br />
+                <span><b>Punti:</b> @attr</span>
+                <br />
+                <span><b>Exp:</b> @exp / 100</span>
+                <br />
+                <span><b>AGI:</b> @Agi</span>
+                <br />
+                <span><b>DEF:</b> @Def</span>
+                <br />
+                <span><b>ACC:</b> @Acc</span>
+                <br />
+                <span><b>STR:</b> @Str</span>
+                <br />
+                <span><b>WIS:</b> @Wis</span>
+            </td>
+            <td style="vertical-align:top; padding: 15px;">
+                @for (int i = 0; i < activeEffects.Count; i++) {
+                    string sEffect = activeEffects[i].Name+ $" (durata: {activeEffects[i].RemainingDuration} turni) (potenza: {activeEffects[i].Strength})";
+                    <span>@sEffect</span>
+
+                    <br />
+                }
+            </td>
+        </tr>
+    </table>
+}
+
+@code {
+    string sMoves = "";
+    bool bGenerating = true;
+
+    ViewEvent viewEvent = new ViewEvent();
+    ViewEquipment viewEquip = new ViewEquipment();
+    ViewItems viewItems = new ViewItems();
+    ViewAttributes viewAttributes = new ViewAttributes();
+
+    LoadedM mapHandler = null;
+    int size = 0;
+
+    #region Stats
+    public int ht = 100;
+
+    public int agi = 1;
+    public int def = 1;
+    public int acc = 1;
+    public int str = 1;
+    public int wis = 1;
+    public int vit = 0;
+
+    public int bonusAgi { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipAgi > 0).Sum(x => x.EquipAgi); tot += activeEffects.Where(x => x.Type == Effect.EffectType.Agility).Sum(x => x.Strength); tot -= activeEffects.Where(x => x.Type == Effect.EffectType.CurseAgility).Sum(x => x.Strength); tot += Global.activeItems.Where(x => x.Type == Item.ItemType.Stimulants).Sum(x => x.Strength); return tot; } }
+    public int bonusDef { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipDef > 0).Sum(x => x.EquipDef); tot += activeEffects.Where(x => x.Type == Effect.EffectType.Defence).Sum(x => x.Strength); tot -= activeEffects.Where(x => x.Type == Effect.EffectType.CurseDefence).Sum(x => x.Strength); tot += Global.activeItems.Where(x => x.Type == Item.ItemType.Stimulants).Sum(x => x.Strength); return tot; } }
+    public int bonusAcc { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipAcc > 0).Sum(x => x.EquipAcc); tot += activeEffects.Where(x => x.Type == Effect.EffectType.Accuracy).Sum(x => x.Strength); tot -= activeEffects.Where(x => x.Type == Effect.EffectType.CurseAccuracy).Sum(x => x.Strength); tot += Global.activeItems.Where(x => x.Type == Item.ItemType.Stimulants).Sum(x => x.Strength); return tot; } }
+    public int bonusStr { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipStr > 0).Sum(x => x.EquipStr); tot += activeEffects.Where(x => x.Type == Effect.EffectType.Strength).Sum(x => x.Strength); tot -= activeEffects.Where(x => x.Type == Effect.EffectType.CurseStrength).Sum(x => x.Strength); tot += Global.activeItems.Where(x => x.Type == Item.ItemType.Stimulants).Sum(x => x.Strength); return tot; } }
+    public int bonusWis { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipWis > 0).Sum(x => x.EquipWis); tot += activeEffects.Where(x => x.Type == Effect.EffectType.Perception).Sum(x => x.Strength); tot -= activeEffects.Where(x => x.Type == Effect.EffectType.CursePerception).Sum(x => x.Strength); tot += Global.activeItems.Where(x => x.Type == Item.ItemType.Stimulants).Sum(x => x.Strength); return tot; } }
+    public int bonusVit { get { int tot = 0; tot += Global.equippedEquipment.Where(x => x.EquipVit > 0).Sum(x => x.EquipVit); tot += activeEffects.Where(x => x.Type == Effect.EffectType.Vitality).Sum(x => x.Strength); tot -= activeEffects.Where(x => x.Type == Effect.EffectType.CurseVitality).Sum(x => x.Strength); tot += Global.activeItems.Where(x => x.Type == Item.ItemType.Stimulants).Sum(x => x.Strength); return tot; } }
+
+    public int Agi => Math.Max(agi + bonusAgi, 1);
+    public int Def => Math.Max(def + bonusDef, 1);
+    public int Acc => Math.Max(acc + bonusAcc, 1);
+    public int Str => Math.Max(str + bonusStr, 1);
+    public int Wis => Math.Max(wis + bonusWis, 1);
+    public int MaxHT => Math.Max(100 + (bonusVit * 5), 1);
+
+    public int Lvl => agi + def + acc + wis + vit + attr + str;
+
+    public int attr = 0;
+    public int exp = 0;
+
+    public int MovementPoints = 0;
+    #endregion
+
+    #region Effects
+    public List<Effect> activeEffects = new List<Effect>();
+    #endregion
+
+    bool bTurnoGiocatore = false;
+    private static Func<string, Task>? KeyboardEventLocalAsyncReference;
+
+    public async Task KeyboardEventLocalAsync(string key) {
+        string sKey = key.ToUpperInvariant();
+        if (sKey == "W" || sKey == "S" || sKey == "D" || sKey == "A" || sKey == " ") await Move(sKey[0]);
+    }
+
+    [JSInvokable]
+    public static async Task KeyboardEventAsync(KeyboardEventArgs e) {
+        if (KeyboardEventLocalAsyncReference is { } actionAsync) {
+            await actionAsync(e.Key); 
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {    // Se è la prima volta che carico la pagina o sto ricaricando
+            KeyboardEventLocalAsyncReference = KeyboardEventLocalAsync;
+            await JSRuntime.InvokeVoidAsync("JsFunctions.addKeyboardListenerEvent");
+            ResetAll();
+
+            attr = 100;
+            for (int i = 0; i < 100; i++) { Global.availableItems.Add(new Item(Item.ItemType.HealPotion)); }
+            //activeEffects.Add(new Effect(Effect.EffectType.Speed, 3, 3));
+
+            Generate();
+        }
+    }
+
+    private async Task Generate() {
+        int iRim = 100 - Global.availableItems.Count;
+        for (int i = 0; i < iRim; i++) Global.availableItems.Add(new Item(Item.ItemType.HealPotion));
+
+        bGenerating = true;
+        StateHasChanged();
+
+        Generation gen = new Generation(size);
+        mapHandler = new LoadedM(gen.GetM());
+        if (mapHandler.status != 1) await Generate();
+
+        Point p = mapHandler.GetP();
+        Dictionary<Point, Tuple<Cell, bool>> surr = mapHandler.GetSurroundings();
+        mapHandler.RevealFOW(p.X, p.Y);
+        for (int i = 0; i < surr.Keys.Count; i++) {
+            mapHandler.RevealFOW(surr.Keys.ElementAt(i).X, surr.Keys.ElementAt(i).Y);
+        }
+        bGenerating = false;
+
+        StateHasChanged();
+
+        await DoTurn();
+        StateHasChanged();
+    }
+
+    private async Task ShowEquipment() {
+        await viewEquip.Open();
+        StateHasChanged();
+    }
+
+    private async Task ShowItems() {
+        if (await viewItems.Open(false)) {
+            for (int i = 0; i < viewItems.lstOggettiSelezionati.Count; i++) {
+                Item it = viewItems.lstOggettiSelezionati[i];
+                if (it.Type == Item.ItemType.Stimulants) {
+                    Effect eff = new Effect(Effect.EffectType.Strength, it.Strength, it.Duration);
+                    activeEffects.Add(eff);
+
+                    Effect eff2 = new Effect(Effect.EffectType.Agility, it.Strength, it.Duration);
+                    activeEffects.Add(eff2);
+                } else if (it.Type == Item.ItemType.InstHealPotion) {
+                    ht = MaxHT;
+                } else if (it.Type == Item.ItemType.HealPotion) {
+                    Effect eff = new Effect(Effect.EffectType.Heal, it.Strength, it.Duration);
+                    activeEffects.Add(eff);
+                }
+                //else if (it.Type == Item.ItemType.Smoke) {
+                //
+                //}
+            }
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowAttributes() {
+        if (await viewAttributes.Open(attr, vit, agi, def, acc, str, wis)) {
+            attr = viewAttributes.iFreePoints;
+            vit = viewAttributes.vit;
+            agi = viewAttributes.agi;
+            def = viewAttributes.def;
+            acc = viewAttributes.acc;
+            str = viewAttributes.str;
+            wis = viewAttributes.wis;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DoTurn() {
+        bTurnoGiocatore = false;
+        Point p = mapHandler.GetP();
+        Dictionary<Point, Tuple<Cell, bool>> surr = mapHandler.GetSurroundings();
+        mapHandler.RevealAroundPlayer(Math.Max(1, (wis / 5) + 1));
+
+        bool bStealth = false;
+        int iInternalMovementPoints = 1;
+
+        for (int i = 0; i < activeEffects.Count; i++) {
+            Effect.EffectType eff = activeEffects[i].Type;
+            switch (eff) {
+                case Effect.EffectType.Heal:
+                    ht = Math.Min(ht + activeEffects[i].Strength, MaxHT);
+                    break;
+                case Effect.EffectType.Speed:
+                    iInternalMovementPoints += activeEffects[i].Strength;
+                    break;
+                case Effect.EffectType.Stealth:
+                    bStealth = true;
+                    break;
+            }
+            activeEffects[i].RemainingDuration--;
+        }
+        activeEffects.RemoveAll(x => x.RemainingDuration == 0);
+        StateHasChanged();
+
+        if (!bStealth) {
+            List<Cell> surpr = new List<Cell>();
+            List<Cell> em = new List<Cell>();
+            for (int i = 0; i < surr.Keys.Count; i++) {
+                if (surr.Values.ElementAt(i).Item1.Type == CellType.Monster) {
+                    em.Add(surr.Values.ElementAt(i).Item1);
+                    if (!surr.Values.ElementAt(i).Item2) surpr.Add(surr.Values.ElementAt(i).Item1);
+                }
+            }
+
+            List<string> textToShow = new List<string>();
+            if (em.Count > 0) {
+                if (em.Count == 1) textToShow.Add($"Trovato un mostro di livello {em[0].Level}!");
+                else {
+                    string append = "";
+                    for (int i = 0; i < em.Count; i++) append += "Lvl. " + em[i] + ", ";
+                    if (append.EndsWith(", ")) append = append.Substring(0, append.Length - 2);
+                    textToShow.Add($"Trovati {em.Count} mostri! {append}");
+                }
+                await viewEvent.Open(textToShow, "Combattimento", new string[] { "Avanti" });
+
+                List<Cell> aSurpr = new List<Cell>();
+                for (int i = 0; i < surpr.Count; i++) {
+                    textToShow.Clear();
+                    int roll = Global.rnd.Next(0, 100);
+                    if (roll + 1 - wis + (7 * surpr[i].Level) >= 66) {
+                        textToShow.Add("Sei stato colto di sopresa dal mostro!");
+                        aSurpr.Add(surpr[i]);
+                    } else textToShow.Add("Non sei stato colto di sopresa dal mostro!");
+                    await viewEvent.Open(textToShow, $"ROLL Controllo sorpresa {i + 1}/{surpr.Count}", new string[] { "Avanti" });
+                }
+
+                for (int i = 0; i < aSurpr.Count; i++) {
+                    textToShow.Clear();
+                    int roll = Global.rnd.Next(0, 100);
+                    if (roll + 1 >= 40) {
+                        int dmg = 10 + em[i].Level * 5;
+                        ht -= dmg;
+                        textToShow.Add($"Sei stato colpito da un mostro! Hai subito {dmg} danni.");
+                        textToShow.Add($"Hai {ht}HP.");
+                    } else textToShow.Add("Sei stato mancato!");
+
+                    if (ht <= 0) {
+                        textToShow.Add("Hai perso!");
+                        await viewEvent.Open(textToShow, $"ROLL Combattimento {i + 1}/{aSurpr.Count}", new string[] { "Riavvia" });
+                        ResetAll();
+                        await Generate();
+                        return;
+                    }
+                    await viewEvent.Open(textToShow, $"ROLL Combattimento {i + 1}/{aSurpr.Count}", new string[] { "Avanti" });
+                }
+
+                textToShow.Clear();
+                List<string> options = new List<string>();
+                for (int i = 0; i < em.Count; i++) {
+                    options = new List<string>() { "Scappare", "Attaccare", "Difendere" };
+                    int iRes = await viewEvent.Open("Cosa vuoi fare?", $"Combattimento {i + 1}/{em.Count}", options.ToArray());
+
+                    textToShow.Clear();
+                    options.Clear();
+
+                    int roll;
+                    if (iRes == 0) {
+                        textToShow.Clear();
+                        roll = Global.rnd.Next(0, 100);
+                        if (roll + 1 - agi + (em[i].Level * 3) >= 30) {
+                            int dmg = 10 + em[i].Level * 5;
+                            ht -= dmg;
+                            textToShow.Add($"Non sei riuscito a scappare, sei stato colpito dal mostro e hai subito {dmg} danni!");
+                            textToShow.Add($"Hai {ht}HP.");
+                        } else { textToShow.Add("Sei scappato!"); }
+
+                        await viewEvent.Open(textToShow, $"ROLL Fuga {i + 1}/{aSurpr.Count}", new string[] { "Avanti" });
+
+                    } else if (iRes == 1) {
+                        roll = Global.rnd.Next(0, 100);
+                        int dmg;
+                        textToShow.Clear();
+                        if (roll + 1 - (acc * 5) + (em[i].Level * 5) >= 50) {
+                            dmg = 10 + em[i].Level * 5;
+                            ht -= dmg;
+                            textToShow.Add($"Hai mancato e sei stato colpito dal mostro! Hai subito {dmg} danni!");
+                            textToShow.Add($"Hai {ht}HP.");
+                        } else {
+                            dmg = Global.rnd.Next(Str * 7, (Str * 11) + 1);
+                            em[i].CurrentHealth -= dmg;
+                            textToShow.Add($"Hai colpito il mostro! Hai inflitto {dmg} danni! Vita del mostro: {em[i].CurrentHealth}");
+
+                            if (em[i].CurrentHealth <= 0) {
+                                int gainedExp = (em[i].Level * 100) - Lvl;
+                                if (gainedExp < 10) gainedExp = 10;
+
+                                textToShow.Add($"Hai sconfitto il mostro! Hai guadagnato {gainedExp} exp!");
+                                exp += gainedExp;
+                            }
+                        }
+                        await viewEvent.Open(textToShow, $"ROLL Attacco {i + 1}/{aSurpr.Count}", new string[] { "Avanti" });
+                    } else if (iRes == 2) {
+                        textToShow.Clear();
+                        roll = Global.rnd.Next(0, 100);
+                        if (roll + 1 - (((double)agi / 3) + ((double)acc / 3) + ((double)wis / 3)) + (em[i].Level * 5) >= 45) {
+                            int dmg = 10 + em[i].Level * 5;
+                            ht -= dmg;
+
+                            textToShow.Add($"Non sei riuscito a proteggerti dall'attacco! Hai subito {dmg} danni.");
+                            textToShow.Add($"Hai {ht}HP.");
+                        } else {
+                            int dmg = 10 + em[i].Level * 5;
+                            dmg = (dmg * (100 - def)) / 100;
+                            ht -= dmg;
+                            textToShow.Add("Ti sei protetto dall'attacco! Hai subito " + dmg + " danni!");
+                            textToShow.Add($"Hai {ht}HP.");
+                        }
+                        await viewEvent.Open(textToShow, $"ROLL Attacco {i + 1}/{aSurpr.Count}", new string[] { "Avanti" });
+                    }
+                    textToShow.Clear();
+                    options.Clear();
+
+                    if (ht <= 0) {
+                        textToShow.Add("Hai perso!");
+                        await viewEvent.Open(textToShow, $"ROLL Combattimento {i + 1}/{aSurpr.Count}", new string[] { "Riavvia" });
+                        ResetAll();
+                        await Generate();
+                        return;
+                    }
+                }
+
+                for (int i = 0; i < surr.Count; i++) {
+                    if (surr.Values.ElementAt(i).Item1.Type == CellType.Monster && surr.Values.ElementAt(i).Item1.CurrentHealth <= 0) {
+                        Point mon = surr.Keys.ElementAt(i);
+                        mapHandler.actualMap[mon.Y][mon.X].Type = CellType.Empty;
+                    }
+                }
+
+                while (exp >= 100) {
+                    exp = exp - 100;
+                    attr += 1;
+                }
+            }
+        }
+
+        MovementPoints = iInternalMovementPoints;
+        bTurnoGiocatore = true;
+        StateHasChanged();
+    }
+
+    private void ResetAll() {
+        bTurnoGiocatore = false;
+        size = 20;
+        ht = 100;
+        agi = 1;
+        def = 1;
+        acc = 1;
+        wis = 1;
+        vit = 0;
+
+        attr = 0;
+        exp = 0;
+
+        Global.availableEquipment.Clear();
+        Global.equippedEquipment.Clear();
+        activeEffects.Clear();
+        Global.activeItems.Clear();
+        Global.availableItems.Clear();
+    }
+
+    private async Task Move(char cDir) {
+        if (!bTurnoGiocatore) return;
+
+        await MoveInt(cDir);
+        mapHandler.RevealAroundPlayer(Math.Max(1, (wis / 5) + 1));
+        MovementPoints--;
+        StateHasChanged();
+
+        if (MovementPoints == 0) {
+            await DoTurn();
+        }
+    }
+
+    private async Task MoveInt(char cDir) {
+        CellType cellType = CellType.Empty;
+        Point movedTo = new Point(-1, -1);
+        int dir = 0;
+        if (cDir == 'W') { dir = 3; cellType = mapHandler.Move(3, out movedTo); } else if (cDir == 'S') { dir = 4; cellType = mapHandler.Move(4, out movedTo); } else if (cDir == 'D') { dir = 1; cellType = mapHandler.Move(1, out movedTo); } else if (cDir == 'A') { dir = 2; cellType = mapHandler.Move(2, out movedTo); }
+        // else if (cDir == 'R') {
+        //     if (dataGridView1.SelectedCells.Count == 0) return;
+        //     Point p = mapHandler.GetP();
+
+        //     int X = dataGridView1.SelectedCells[0].ColumnIndex;
+        //     int Y = dataGridView1.SelectedCells[0].RowIndex;
+        //     mapHandler.IsSightClear(p, new Point(X, Y), out List<Point> passati);
+
+        //     for (int i = 0; i < passati.Count; i++) {
+        //         if (dataGridView1.Rows.Count > passati[i].Y) {
+        //             if (dataGridView1.Rows[passati[i].Y].Cells.Count > passati[i].X) {
+        //                 dataGridView1.Rows[passati[i].Y].Cells[passati[i].X].Style.BackColor = Color.Red;
+        //             }
+        //         }
+        //     }
+        //     return;
+        // }
+        else if (cDir != ' ') return;
+        if (cellType == CellType.Stairs) {
+            List<string> textToShow = new List<string>() { "Hai trovato delle scale.", "Cosa vuoi fare?" };
+            List<string> options = new List<string>(){ "Scendere", "Restare" };
+            int iResp = await viewEvent.Open(textToShow, "Scale", options.ToArray());
+
+            textToShow.Clear();
+            options.Clear();
+
+            if (iResp == 0) {
+                await viewEvent.Open("Hai scelto di scendere le scale...", "Scale", new string[] { "Avanti" });
+                size += 10;
+                await Generate();
+                return;
+            } else return;
+        } else if (cellType == CellType.Chest) {
+            List<string> textToShow = new List<string>() { $"Hai trovato un tesoro di livello {mapHandler.actualMap[movedTo.Y][movedTo.X]}.", "Cosa vuoi fare?" };
+            List<string> options = new List<string>(){ "Aprirlo", "Lasciarlo chiuso" };
+            int iResp = await viewEvent.Open(textToShow, "Tesoro", options.ToArray());
+
+            textToShow.Clear();
+            options.Clear();
+
+            if (iResp == 0) {
+                int roll = Global.rnd.Next(0, 100);
+                if (roll + 1 >= 80) {
+                    roll = Global.rnd.Next(0, 100);
+                    if (roll < 50) {
+                        await viewEvent.Open("Mentre ti avvicini al tesoro senti uno strano ticchettio...", "Trappola", new string[] { "Avanti" });
+
+                        roll = Global.rnd.Next(0, 100);
+                        if (roll + 1 + wis >= 80) {
+                            await viewEvent.Open("Non sei riuscito a notare e disinnescare la trappola! Il tesoro esplode distruggendo il contenuto.", "Trappola", new string[] { "Avanti" });
+                            mapHandler.AbsoluteMove(dir);
+                            return;
+                        } else await viewEvent.Open("Sei riuscito a notare e disinnescare la trappola!", "Trappola", new string[] { "Avanti" });
+
+                        await GetTresureChest(mapHandler.actualMap[movedTo.Y][movedTo.X].ToString());
+                        mapHandler.AbsoluteMove(dir);
+                    } else {
+                        await viewEvent.Open("Apri il tesoro, ne fuoriesce un mostro. È un mimic!", "Trappola", new string[] { "Avanti" });
+                        roll = Global.rnd.Next(0, 100);
+
+                        if (roll + 1 - ((def - agi) / 2) >= 80) {
+                            await viewEvent.Open("Non sei riuscito a difenderti dal mimic! Non ti avvicinerai più a questo tesoro.", "Trappola", new string[] { "Avanti" });
+                            mapHandler.AbsoluteMove(dir);
+                            return;
+                        } else await viewEvent.Open("Sei riuscito a difenderti ed uccidere il mimic!", "Trappola", new string[] { "Avanti" });
+
+                        await GetTresureChest(mapHandler.actualMap[movedTo.Y][movedTo.X].ToString());
+                        mapHandler.AbsoluteMove(dir);
+                    }
+                } else { await GetTresureChest(mapHandler.actualMap[movedTo.Y][movedTo.X].ToString()); mapHandler.AbsoluteMove(dir); }
+            } else return;
+        }
+    }
+
+    private async Task GetTresureChest(string level) {
+        int iLvl = LoadedM.LvlT.IndexOf(level);
+        if (iLvl == -1) return; iLvl += 1;
+
+        LootGeneration loot = new LootGeneration(iLvl);
+        loot.Generate();
+        string displayText;
+        if (loot.Type == LootGeneration.DropType.Exp) {
+            await viewEvent.Open($"All'interno del tesoro hai trovato {loot.ExpAmount} exp!", "Tesoro", new string[] { "Avanti" });
+            exp += loot.ExpAmount;
+            while (exp >= 100) { exp = exp - 100; attr += 1; }
+            //UpdateStats();
+        } else if (loot.Type == LootGeneration.DropType.Effect) {
+            string effectOutput = "";
+
+            switch (loot.GeneratedEffect.Type) {
+                case Effect.EffectType.Accuracy:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} +{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.Agility:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} +{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.CurseAccuracy:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} -{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.CurseAgility:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} -{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.CurseDefence:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} -{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.CursePerception:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} -{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.CurseVitality:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} -{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.Defence:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} +{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.InstantHeal:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name}";
+                    break;
+                case Effect.EffectType.Heal:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} di {loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.Perception:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} +{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.Speed:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.Stealth:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                case Effect.EffectType.Vitality:
+                    effectOutput = $"Dal tesoro hai ottenuto il seguente effetto: {loot.GeneratedEffect.Name} +{loot.GeneratedEffect.Strength} per {loot.GeneratedEffect.RemainingDuration} turni!";
+                    break;
+                default:
+                    effectOutput = $"Effetto sconosciuto ricevuto: {loot.GeneratedEffect.Name}";
+                    break;
+            }
+            await viewEvent.Open(effectOutput, "Tesoro", new string[] { "Avanti" });
+            activeEffects.Add(loot.GeneratedEffect);
+            //UpdateEff();
+        } else if (loot.Type == LootGeneration.DropType.Item) {
+            displayText = $"Hai ottenuto l'oggetto {loot.GeneratedItem.Name}!";
+            if (loot.GeneratedItem.Type == Item.ItemType.Smoke || loot.GeneratedItem.Type == Item.ItemType.HealPotion || loot.GeneratedItem.Type == Item.ItemType.Stimulants) displayText += $" Una volta usato l'oggetto ha una durata di {loot.GeneratedItem.Duration} turni!";
+            await viewEvent.Open(displayText, "Tesoro", new string[] { "Avanti" });
+            Global.availableItems.Add(loot.GeneratedItem);
+            //UpdateObj();
+        } else if (loot.Type == LootGeneration.DropType.Equipment) {
+            List<string> lines = new List<string>();
+            lines.Add($"Congraturazioni! Hai ottenuto un raro pezzo di equipaggiamento: {loot.GeneratedEquip.Name}");
+            lines.Add($"Agilità: +{loot.GeneratedEquip.EquipAgi}");
+            lines.Add($"Difesa: +{loot.GeneratedEquip.EquipDef}");
+            lines.Add($"Precisione: +{loot.GeneratedEquip.EquipAcc}");
+            lines.Add($"Forza: +{loot.GeneratedEquip.EquipStr}");
+            lines.Add($"Intelligenza: +{loot.GeneratedEquip.EquipWis}");
+            lines.Add($"Vitalità: +{loot.GeneratedEquip.EquipVit}");
+            await viewEvent.Open(lines, "Tesoro", new string[] { "Avanti" });
+            Global.availableEquipment.Add(loot.GeneratedEquip);
+            //UpdateEquip();
+        }
+        //UpdateStats();
+    }
+}
